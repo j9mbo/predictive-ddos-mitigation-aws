@@ -1,20 +1,23 @@
-# Ignore Python bytecode
+# Python
 __pycache__/
 *.pyc
-*.env
-# Ignore virtual environments
-venv/
-env/
+.venv/
+.env
+*.ipynb_checkpoints
 
-# Ignore OS files
+# Data artifacts
+data/raw/
+data/features/
+*.parquet
+*.gz
+*.csv
+
+# Lambda build artifacts
+lambda/**/package/
+lambda/**/dist/
+lambda/**/function.zip
+
+# OS / IDE
 .DS_Store
-
-# Ignore log files
-*.log
-
-# Ignore node modules
-node_modules/
-
-# Ignore IDE settings
-.vscode/
 .idea/
+.vscode/
