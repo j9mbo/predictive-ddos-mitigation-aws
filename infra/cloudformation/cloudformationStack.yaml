@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Juice Shop on ECS Fargate behind ALB + CloudFront + WAF (CloudFront logs with ACL fix). Deploy in us-east-1.
+Description: Juice Shop on ECS Fargate behind ALB + CloudFront + WAF (deploy in us-east-1). CloudFront logs to S3 with ACLs enabled.
 
 Parameters:
   StackNamePrefix:
@@ -26,9 +26,6 @@ Resources:
       CidrBlock: 10.42.0.0/16
       EnableDnsHostnames: true
       EnableDnsSupport: true
-      Tags:
-        - Key: Name
-          Value: !Sub '${StackNamePrefix}-vpc'
 
   IGW:
     Type: AWS::EC2::InternetGateway
@@ -46,9 +43,6 @@ Resources:
       CidrBlock: 10.42.0.0/20
       MapPublicIpOnLaunch: true
       AvailabilityZone: !Select [0, !GetAZs '']
-      Tags:
-        - Key: Name
-          Value: !Sub '${StackNamePrefix}-public-a'
 
   PublicSubnetB:
     Type: AWS::EC2::Subnet
@@ -57,9 +51,6 @@ Resources:
       CidrBlock: 10.42.16.0/20
       MapPublicIpOnLaunch: true
       AvailabilityZone: !Select [1, !GetAZs '']
-      Tags:
-        - Key: Name
-          Value: !Sub '${StackNamePrefix}-public-b'
 
   PublicRT:
     Type: AWS::EC2::RouteTable
@@ -95,9 +86,6 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: !Sub '${StackNamePrefix}-alb-sg'
 
   ServiceSG:
     Type: AWS::EC2::SecurityGroup
@@ -109,9 +97,6 @@ Resources:
           FromPort: 3000
           ToPort: 3000
           SourceSecurityGroupId: !Ref AlbSG
-      Tags:
-        - Key: Name
-          Value: !Sub '${StackNamePrefix}-svc-sg'
 
   LogsBucket:
     Type: AWS::S3::Bucket
@@ -119,32 +104,12 @@ Resources:
       BucketName: !Sub '${AWS::AccountId}-${StackNamePrefix}-logs-${AWS::Region}'
       OwnershipControls:
         Rules:
-          - ObjectOwnership: BucketOwnerPreferred     # дозволяє ACL для CloudFront logs
+          - ObjectOwnership: BucketOwnerPreferred
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
-      Tags:
-        - Key: Name
-          Value: !Sub '${StackNamePrefix}-logs'
-
-  LogsBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref LogsBucket
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: CloudFrontStandardLogsDelivery
-            Effect: Allow
-            Principal:
-              Service: delivery.logs.cloudfront.amazonaws.com
-            Action: 's3:PutObject'
-            Resource: !Sub 'arn:${AWS::Partition}:s3:::${LogsBucket}/cloudfront/*'
-            Condition:
-              StringEquals:
-                's3:x-amz-acl': 'bucket-owner-full-control'
 
   ECSCluster:
     Type: AWS::ECS::Cluster
@@ -154,7 +119,6 @@ Resources:
   ExecRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${StackNamePrefix}-ecs-exec-${AWS::StackName}'
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -167,7 +131,6 @@ Resources:
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${StackNamePrefix}-ecs-task-${AWS::StackName}'
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -244,13 +207,12 @@ Resources:
         - ContainerName: juice
           ContainerPort: 3000
           TargetGroupArn: !Ref TargetGroup
-      ServiceName: !Sub '${StackNamePrefix}-svc'
 
   WAFWebACL:
     Type: AWS::WAFv2::WebACL
     Properties:
       Name: !Sub '${StackNamePrefix}-web-acl'
-      Scope: CLOUDFRONT                        # обов'язково розгортати в us-east-1
+      Scope: CLOUDFRONT
       DefaultAction: { Allow: {} }
       VisibilityConfig:
         CloudWatchMetricsEnabled: true
@@ -277,7 +239,7 @@ Resources:
         Comment: !Sub '${StackNamePrefix} CloudFront -> ALB -> ECS(Fargate)'
         DefaultCacheBehavior:
           TargetOriginId: alb-origin
-          ViewerProtocolPolicy: redirect-to-HTTPS
+          ViewerProtocolPolicy: redirect-to-https
           AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
           CachedMethods: [GET, HEAD]
           ForwardedValues:
@@ -298,12 +260,82 @@ Resources:
         PriceClass: PriceClass_100
         WebACLId: !GetAtt WAFWebACL.Arn
 
+  # --- S3 bucket for WAF logs ---
+  WAFLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::AccountId}-${StackNamePrefix}-waf-logs-${AWS::Region}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  # --- IAM role for Firehose to write into S3 ---
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: firehose.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AllowS3Delivery
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${WAFLogsBucket}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${WAFLogsBucket}/*'
+
+  # --- Kinesis Data Firehose stream (DirectPut -> S3) for WAF logs ---
+  WAFLogsDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub 'aws-waf-logs-${StackNamePrefix}'
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !Sub 'arn:${AWS::Partition}:s3:::${WAFLogsBucket}'
+        RoleARN: !GetAtt FirehoseRole.Arn
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        Prefix: 'year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/'
+        ErrorOutputPrefix: 'errors/!{firehose:error-output-type}/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/'
+
+  # --- Attach WAF logging to the existing WebACL (global, us-east-1) ---
+  WAFLoggingConfiguration:
+    Type: AWS::WAFv2::LoggingConfiguration
+    DependsOn:
+      - WAFLogsDeliveryStream
+    Properties:
+      ResourceArn: !GetAtt WAFWebACL.Arn
+      LogDestinationConfigs:
+        - !GetAtt WAFLogsDeliveryStream.Arn
+      RedactedFields:
+        - SingleHeader: { Name: 'authorization' }
+        - SingleHeader: { Name: 'cookie' }
+
 Outputs:
   CloudFrontDomain:
     Description: Public domain of CloudFront distribution
     Value: !GetAtt Distribution.DomainName
   ALBDNSName:
-    Description: Public DNS of ALB (origin). Later you can restrict direct access.
+    Description: Public DNS of ALB (origin)
     Value: !GetAtt ALB.DNSName
   LogsBucketName:
     Description: S3 bucket for CloudFront access logs
@@ -313,4 +345,4 @@ Outputs:
     Value: !Ref ECSCluster
   ECSServiceName:
     Description: ECS service name
-    Value: !GetAtt Service.ServiceName
+    Value: !Ref Service
