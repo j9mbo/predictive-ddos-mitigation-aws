@@ -1,0 +1,4 @@
+start_iso,end_iso,label,notes
+2025-09-15T13:50:00Z,2025-09-15T14:04:00Z,benign-surge,k6 benign traffic
+2025-09-15T15:07:00Z,2025-09-15T15:19:00Z,attack-burst,k6 simulated attack burst
+2025-09-15T15:55:00Z,2025-09-15T16:15:00Z,benign-surge,k6 benign cool-down
