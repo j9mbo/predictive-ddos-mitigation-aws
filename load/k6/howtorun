@@ -1,0 +1,86 @@
+########### attack-burst ###########
+# Set BASE_URL to your CloudFront domain (no trailing slash)
+export BASE_URL="https://dtuhfgo6j9b39.cloudfront.net"
+
+# 5m ramp-up → 10m peak → 5m cool-down, max 300 VUs
+k6 run -e BASE_URL="$BASE_URL" -e RAMP_MINS=5 -e PEAK_MINS=10 -e COOL_MINS=5 -e MAX_VUS=300 load/k6/benign-surge.js
+
+
+
+########### benign-surge ###########
+# 1) BENING 
+export BASE_URL="https://$CF_DOMAIN"
+k6 run \
+  -e BASE_URL="$BASE_URL" \
+  -e RAMP_MINS=3 -e PEAK_MINS=8 -e COOL_MINS=3 \
+  -e MAX_VUS=15 \
+  -e REQS_PER_ITER=1 -e SLEEP_MS_MIN=250 -e SLEEP_MS_MAX=750 \
+  load/k6/benign-surge.js
+
+
+# 2) attack burst
+export BASE_URL="https://$CF_DOMAIN"
+nohup bash -c 'sleep 15m; export BASE_URL="'"$BASE_URL"'"; k6 run --duration 10m \
+  -e BASE_URL="$BASE_URL" \
+  -e RAMP_MINS=2 -e PEAK_MINS=8 -e COOL_MINS=2 \
+  -e TARGET_RPS=12 -e TIMEOUT_MS=6000 -e SLEEP_MS_MIN=150 -e SLEEP_MS_MAX=400 \
+  load/k6/attack-burst.js' > attack.log 2>&1 &
+  
+# ### 
+# % export BASE_URL="https://$CF_DOMAIN" k6 run -e BASE_URL="$BASE_URL" \
+#   -e RAMP_MINS=2 -e PEAK_MINS=8 -e COOL_MINS=2 \
+#   -e TARGET_RPS=12 -e TIMEOUT_MS=6000 -e SLEEP_MS_MIN=150 -e SLEEP_MS_MAX=400 \
+#   load/k6/attack-burst.js
+
+# 3) BREEZE
+export BASE_URL="https://$CF_DOMAIN"
+k6 run \
+  -e BASE_URL="$BASE_URL" \
+  -e TARGET_RPS=10 \
+  -e TIMEOUT_MS=3000 \
+  -e SLEEP_MS_MIN=200 -e SLEEP_MS_MAX=600 \
+  load/k6/benign-breeze.js
+
+python ml/train_classifier.py \
+--labels-csv data/labels/attack_intervals.csv \
+--models-prefix "${S3_MODELS_PREFIX:-models/}" \
+--holdout-min 12 \
+--take-last 8 \
+--algo auto
+
+
+
+python3 ml/train_classifier.py \
+  --features-prefix s3://913524935822-juice-ecs-logs-us-east-1/feature-store/joined/ \
+  --labels-csv data/labels/labels.csv \
+  --take-last 8 \
+  --holdout-min 12 \
+  --val-ratio 0.5 \
+  --algo rf \
+  --n-iter 30 \
+  --threshold-strategy max_f1 \
+  --models-prefix models/ \
+  --random-seed 42 \
+  --verbose
+
+
+
+  ########
+kill $(cat k6_runs_logs/benign_A.pid) 2>/dev/null || true
+./load/k6/orchestrate_k6_runs.sh A
+tail -f k6_runs_logs/benign_A.log
+
+
+kill $(cat k6_runs_logs/benign_B.pid) 2>/dev/null || true
+./load/k6/orchestrate_k6_runs.sh B
+tail -f k6_runs_logs/benign_B.log k6_runs_logs/attack_B.log
+
+
+
+export BASE_URL="https://$CF_DOMAIN"
+k6 run \
+  -e BASE_URL="$BASE_URL" \
+  -e RAMP_MINS=3 -e PEAK_MINS=5 -e COOL_MINS=2 \
+  -e TARGET_RPS=20 -e TIMEOUT_MS=6000 \
+  -e SLEEP_MS_MIN=1 -e SLEEP_MS_MAX=400 \
+  load/k6/attack-burst.js
