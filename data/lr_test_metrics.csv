@@ -1,0 +1,2 @@
+Model,FP-rate(TEST),Specificity(TEST),TP,FP,FN,TN
+LogisticRegression,0.9333,0.0667,22,14,2,1

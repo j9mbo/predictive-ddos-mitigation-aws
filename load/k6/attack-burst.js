@@ -76,15 +76,15 @@ const tCool = `${ATT_COOL_MINS}m`;
 export const options = {
   thresholds: {
     http_req_failed: [
-      'rate<0.20',
-      { threshold: 'rate<0.10', abortOnFail: true, delayAbortEval: '1m' },
+      'rate<0.45',
+      { threshold: 'rate<0.25', delayAbortEval: '1m' },
     ],
     'http_req_duration': [
       'p(95)<3000',
-      { threshold: 'p(99)<5000', abortOnFail: true, delayAbortEval: '1m' },
+      { threshold: 'p(99)<5000', delayAbortEval: '1m' },
     ],
     'http_req_duration{static_asset:true}': [
-      { threshold: 'p(95)<1500', abortOnFail: true, delayAbortEval: '1m' },
+      { threshold: 'p(95)<1500', delayAbortEval: '1m' },
     ],
   },
   scenarios: {

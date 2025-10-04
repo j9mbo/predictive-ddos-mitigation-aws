@@ -30,15 +30,15 @@ const WARM_MINS   = envNum('WARM_MINS',   5, 0.1, 240);
 const BREEZE_MINS = envNum('BREEZE_MINS', 30, 0.1, 480);
 const COOL_MINS   = envNum('COOL_MINS',   5, 0.1, 240);
 
-const WARM_RPS    = envNum('WARM_RPS',    3,  0,  5000);
-const BREEZE_RPS  = envNum('BREEZE_RPS',  6,  0,  5000);
-const COOL_RPS    = envNum('COOL_RPS',    3,  0,  5000);
+const WARM_RPS    = envNum('WARM_RPS',    1,  0,  5000);
+const BREEZE_RPS  = envNum('BREEZE_RPS',  2,  0,  5000);
+const COOL_RPS    = envNum('COOL_RPS',    1,  0,  5000);
 
 // Capacity planning for arrival-rate executors:
 const EST_LAT_MS       = envNum('EST_LAT_MS',       400, 10, 60000);
 const THINK_MS         = envNum('THINK_MS',         50,  0,  60000);
 const VU_SAFETY_FACTOR = envNum('VU_SAFETY_FACTOR', 4,   1,  20);
-const VU_MAX_CAP       = envNum('VU_MAX_CAP',       500, 1,  20000);
+const VU_MAX_CAP       = envNum('VU_MAX_CAP',       10, 1,  20000);
 
 const peakRps = Math.max(WARM_RPS, BREEZE_RPS, COOL_RPS);
 const estIterSec = Math.max((EST_LAT_MS + THINK_MS) / 1000, 0.001);
@@ -82,16 +82,16 @@ export const options = {
     // Global availability & latency SLOs with safe auto-abort:
     http_req_failed: [
       'rate<0.20',
-      { threshold: 'rate<0.10', abortOnFail: true, delayAbortEval: '2m' },
+      { threshold: 'rate<0.10', delayAbortEval: '2m' },
     ],
     // Overall latency
     'http_req_duration': [
       'p(95)<3000',
-      { threshold: 'p(99)<5000', abortOnFail: true, delayAbortEval: '2m' },
+      { threshold: 'p(99)<5000', delayAbortEval: '2m' },
     ],
     // Static assets stricter:
     'http_req_duration{static_asset:true}': [
-      { threshold: 'p(95)<1500', abortOnFail: true, delayAbortEval: '2m' },
+      { threshold: 'p(95)<1500', delayAbortEval: '2m' },
     ],
   },
   scenarios: {

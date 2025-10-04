@@ -1,0 +1,2 @@
+Model,C,Threshold(VAL),Precision(VAL),Recall(VAL),F1(VAL),Delay_min(B-core)
+LogisticRegression,0.1,0.202403,1.0,1.0,1.0,n/a
