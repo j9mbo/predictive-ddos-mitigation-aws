@@ -34,16 +34,16 @@ def find_best_threshold(model, val_df_path):
     return best_threshold
 
 def train_models_and_tune(train_path, val_path):
-    print(f"--- Навчання моделей на {train_path} ---")
+    print(f"--- Training models on {train_path} ---")
     tr = pd.read_parquet(train_path); Xtr = tr[feat_cols(tr)]; ytr = tr["label"].astype(int)
     rf = RandomForestClassifier(n_estimators=300, n_jobs=-1, random_state=42, class_weight="balanced_subsample").fit(Xtr, ytr)
     lr = LogisticRegression(C=0.1, class_weight="balanced", max_iter=2000).fit(Xtr, ytr)
-    print("Моделі навчено.")
-    print(f"\n--- Пошук оптимальних порогів на {val_path} ---")
+    print("Model trained.")
+    print(f"\n--- Searching for optimal thresholds on {val_path} ---")
     rf_threshold = find_best_threshold(rf, val_path)
     lr_threshold = find_best_threshold(lr, val_path)
-    print(f"Оптимальний поріг для RF: {rf_threshold:.4f}")
-    print(f"Оптимальний поріг для LR: {lr_threshold:.4f}\n")
+    print(f"Optimal threshold for RF: {rf_threshold:.4f}")
+    print(f"Optimal threshold for LR: {lr_threshold:.4f}\n")
     return rf, lr, rf_threshold, lr_threshold
 
 def main():
@@ -110,7 +110,7 @@ def plot_complete_graph(results):
 
     output_filename = 'FINAL_COMPLETE_GRAPH.pdf'
     fig.savefig(output_filename, bbox_inches='tight')
-    print(f"\nФінальний, ПОВНИЙ графік збережено! Файл: {output_filename}")
+    print(f"\nFinal graph: {output_filename}")
     plt.show()
 
 if __name__ == "__main__":
